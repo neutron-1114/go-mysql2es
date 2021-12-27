@@ -1,0 +1,41 @@
+mysql:
+  host: 127.0.0.1
+  port: 6379
+  user: root
+  password: 123456
+  database: test
+
+binlog:
+  #选择开始同步的binlog时间，如果可以的话建议去机器上看一看从全量同步开始的时间戳
+  #这样可以加快同步进度
+  #如果此项参数为空，则从最早的binlog开始同步
+#  startBinLogName: mysql-bin.000765
+  #binlog位点，默认为0
+#  startBinLogPosition: 0
+  #当前同步进度的文件路径，默认为可执行文件的当前目录下
+  #！！！必须是绝对路径
+  binLogStatusFilePath: /data/go-mysql2es
+
+es:
+  host: 127.0.0.1
+  port: 8200
+  index: test_index
+  type: test_type
+
+rule:
+  tables:
+    goods:
+      main: true
+      main_coll: id
+      mapping:
+        id: goods_id
+        title: title
+        shop_id: shop_id
+        status: status
+    shop:
+      join_coll: id
+      join_main_coll: shop_id
+      mapping:
+        shop_name: shop_name
+        shop_score: shop_score
+        shop_level: shop_level
