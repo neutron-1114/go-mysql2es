@@ -64,7 +64,7 @@ func (d *DB) FillCollType() {
 			rule.MainTable.CollList[field] = &config.Coll{
 				CollName:    field,
 				CollType:    GetCollTypeFromMysql(t),
-				MappingName: field,
+				MappingName: fmt.Sprintf("%v.%v", mainTable.TableName, field),
 				FullName:    fmt.Sprintf("%v.%v", mainTable.TableName, field),
 			}
 		} else {
@@ -95,7 +95,7 @@ func (d *DB) FillCollType() {
 				v.CollList[field] = &config.Coll{
 					CollName:    field,
 					CollType:    GetCollTypeFromMysql(t),
-					MappingName: field,
+					MappingName: fmt.Sprintf("%v.%v", v.TableName, field),
 					FullName:    fmt.Sprintf("%v.%v", v.TableName, field),
 				}
 			} else {
@@ -154,6 +154,7 @@ func (d *DB) FullGetByRange(startId uint64, endId uint64) []map[*config.Coll]int
 		d.buildModel()
 	}
 	execSQL := fmt.Sprintf(d.rangeSearchModel, startId, endId)
+	log.Info(execSQL)
 	rows, err := d.db.Query(execSQL)
 	if err != nil {
 		log.Panicf("%v 执行失败... %v", execSQL, err)
@@ -183,6 +184,7 @@ func (d *DB) FullGetById(ids []interface{}) []map[*config.Coll]interface{} {
 		idsStr = append(idsStr, fmt.Sprintf("%v", id))
 	}
 	execSQL := fmt.Sprintf(d.idSearchModel, strings.Join(idsStr, ","))
+	log.Info(execSQL)
 	rows, err := d.db.Query(execSQL)
 	if err != nil {
 		log.Panicf("%v 执行失败... %v", execSQL, err)
@@ -215,6 +217,7 @@ func (d *DB) GetMainIdsByJoinId(joinId interface{}, joinTableName string) []inte
 	} else {
 		execSQL += fmt.Sprintf(`%v`, joinId)
 	}
+	log.Info(execSQL)
 	rows, err := d.db.Query(execSQL)
 	if err != nil {
 		log.Panicf("%v 执行失败... %v", execSQL, err)
