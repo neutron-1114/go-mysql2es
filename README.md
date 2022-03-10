@@ -2,6 +2,7 @@
 ###没有进行大规模测试，仅仅是学习使用，切勿在线上使用，或者修改后再使用
 自用Mysql同步Elasticsearch工具
 
+go build -o ./bin/go-mysql2es ./src/main.go
 
 支持主表与多个附表连表，形成宽表
 但只能是一主对多附，不能附对附
