@@ -160,22 +160,7 @@ func (d *DB) FullGetByRange(startId uint64, endId uint64) []map[*config.Coll]int
 	}
 	var resultList []map[*config.Coll]interface{}
 	for rows.Next() {
-		var params []interface{}
-		for _, coll := range d.colls {
-			switch coll.CollType {
-			case INT, BIGINT, TINYINT, SmallInt:
-				var arg int64
-				params = append(params, &arg)
-			case VARCHAR, TEXT:
-				var arg string
-				params = append(params, &arg)
-			case UnsignedBigint, UnsignedSmallInt:
-				var arg uint64
-				params = append(params, &arg)
-			default:
-				fmt.Println(coll)
-			}
-		}
+		params := GetParamsByColls(d.colls)
 		err = rows.Scan(params...)
 		if err != nil {
 			// 忽略空异常
@@ -183,17 +168,7 @@ func (d *DB) FullGetByRange(startId uint64, endId uint64) []map[*config.Coll]int
 				log.Panicf("%v 解析失败... %v", execSQL, err)
 			}
 		}
-		result := make(map[*config.Coll]interface{})
-		for i, v := range params {
-			switch d.colls[i].CollType {
-			case INT, BIGINT, TINYINT, SmallInt:
-				result[d.colls[i]] = *(v.(*int64))
-			case VARCHAR, TEXT:
-				result[d.colls[i]] = *(v.(*string))
-			case UnsignedBigint, UnsignedSmallInt:
-				result[d.colls[i]] = *(v.(*uint64))
-			}
-		}
+		result := GetResultByParams(params, d.colls)
 		resultList = append(resultList, result)
 	}
 	return resultList
@@ -214,20 +189,7 @@ func (d *DB) FullGetById(ids []interface{}) []map[*config.Coll]interface{} {
 	}
 	var resultList []map[*config.Coll]interface{}
 	for rows.Next() {
-		var params []interface{}
-		for _, coll := range d.colls {
-			switch coll.CollType {
-			case INT, BIGINT, TINYINT, SmallInt:
-				var arg int64
-				params = append(params, &arg)
-			case VARCHAR, TEXT:
-				var arg string
-				params = append(params, &arg)
-			case UnsignedBigint, UnsignedSmallInt:
-				var arg uint64
-				params = append(params, &arg)
-			}
-		}
+		params := GetParamsByColls(d.colls)
 		err = rows.Scan(params...)
 		if err != nil {
 			// 忽略空异常
@@ -235,17 +197,7 @@ func (d *DB) FullGetById(ids []interface{}) []map[*config.Coll]interface{} {
 				log.Panicf("%v 解析失败... %v", execSQL, err)
 			}
 		}
-		result := make(map[*config.Coll]interface{})
-		for i, v := range params {
-			switch d.colls[i].CollType {
-			case INT, BIGINT, TINYINT, SmallInt:
-				result[d.colls[i]] = *(v.(*int64))
-			case VARCHAR, TEXT:
-				result[d.colls[i]] = *(v.(*string))
-			case UnsignedBigint, UnsignedSmallInt:
-				result[d.colls[i]] = *(v.(*uint64))
-			}
-		}
+		result := GetResultByParams(params, d.colls)
 		resultList = append(resultList, result)
 	}
 	return resultList
@@ -270,20 +222,7 @@ func (d *DB) GetMainIdsByJoinId(joinId interface{}, joinTableName string) []inte
 	colls := []*config.Coll{d.rule.MainTable.CollList[mainFieldName]}
 	var resultList []interface{}
 	for rows.Next() {
-		var params []interface{}
-		for _, coll := range colls {
-			switch coll.CollType {
-			case INT, BIGINT, TINYINT, SmallInt:
-				var arg int64
-				params = append(params, &arg)
-			case VARCHAR, TEXT:
-				var arg string
-				params = append(params, &arg)
-			case UnsignedBigint, UnsignedSmallInt:
-				var arg uint64
-				params = append(params, &arg)
-			}
-		}
+		params := GetParamsByColls(colls)
 		err = rows.Scan(params...)
 		if err != nil {
 			// 忽略空异常
@@ -291,18 +230,8 @@ func (d *DB) GetMainIdsByJoinId(joinId interface{}, joinTableName string) []inte
 				log.Panicf("%v 解析失败... %v", execSQL, err)
 			}
 		}
-		result := make(map[string]interface{})
-		for i, v := range params {
-			switch colls[i].CollType {
-			case INT, BIGINT, TINYINT, SmallInt:
-				result[colls[i].CollName] = *(v.(*int64))
-			case VARCHAR, TEXT:
-				result[colls[i].CollName] = *(v.(*string))
-			case UnsignedBigint, UnsignedSmallInt:
-				result[colls[i].CollName] = *(v.(*uint64))
-			}
-		}
-		resultList = append(resultList, result[mainFieldName])
+		result := GetResultByParams(params, colls)
+		resultList = append(resultList, result[d.rule.MainTable.CollList[mainFieldName]])
 	}
 	return resultList
 }
@@ -324,6 +253,42 @@ func (d *DB) GetOldestBinlogName() string {
 		}
 	}
 	return ""
+}
+
+func GetResultByParams(params []interface{}, colls []*config.Coll) map[*config.Coll]interface{} {
+	result := make(map[*config.Coll]interface{})
+	for i, v := range params {
+		switch colls[i].CollType {
+		case INT, BIGINT, TINYINT, SmallInt:
+			result[colls[i]] = *(v.(*int64))
+		case VARCHAR, TEXT:
+			result[colls[i]] = *(v.(*string))
+		case UnsignedBigint, UnsignedSmallInt:
+			result[colls[i]] = *(v.(*uint64))
+		}
+	}
+	return result
+}
+
+func GetParamsByColls(colls []*config.Coll) []interface{} {
+	var params []interface{}
+	for _, coll := range colls {
+		switch coll.CollType {
+		case INT, BIGINT, TINYINT, SmallInt:
+			var arg int64
+			params = append(params, &arg)
+		case VARCHAR, TEXT:
+			var arg string
+			params = append(params, &arg)
+		case UnsignedBigint, UnsignedSmallInt:
+			var arg uint64
+			params = append(params, &arg)
+		}
+	}
+	if params == nil {
+		params = []interface{}{}
+	}
+	return params
 }
 
 func GetCollTypeFromMysql(t string) uint8 {
