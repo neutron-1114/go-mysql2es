@@ -22,6 +22,10 @@ const TEXT uint8 = 5
 
 const UnsignedBigint uint8 = 6
 
+const SmallInt uint8 = 7
+
+const UnsignedSmallInt uint8 = 8
+
 type DB struct {
 	db               *sql.DB
 	rule             *config.Rule
@@ -47,6 +51,7 @@ func (d *DB) FillCollType() {
 	if err != nil {
 		log.Panicf("[PREPARE] 获取表元数据 %v 失败... %v", mainTable.TableName, err)
 	}
+	fullColl := len(rule.MainTable.CollList) == 0
 	for rows.Next() {
 		var field string
 		var t string
@@ -55,11 +60,20 @@ func (d *DB) FillCollType() {
 		if err != nil {
 			log.Panicf("[PREPARE] 获取表元数据 %v 失败... %v", mainTable.TableName, err)
 		}
-		coll, e := rule.MainTable.CollList[field]
-		if e {
-			coll.CollType = GetCollTypeFromMysql(t)
-			if coll.CollType == Unknown {
-				log.Panicf("[PREPARE] %v.%v 类型不支持", rule.MainTable.TableName, field)
+		if fullColl {
+			rule.MainTable.CollList[field] = &config.Coll{
+				CollName:    field,
+				CollType:    GetCollTypeFromMysql(t),
+				MappingName: field,
+				FullName:    fmt.Sprintf("%v.%v", mainTable.TableName, field),
+			}
+		} else {
+			coll, e := rule.MainTable.CollList[field]
+			if e {
+				coll.CollType = GetCollTypeFromMysql(t)
+				if coll.CollType == Unknown {
+					log.Panicf("[PREPARE] %v.%v 类型不支持", rule.MainTable.TableName, field)
+				}
 			}
 		}
 	}
@@ -68,6 +82,7 @@ func (d *DB) FillCollType() {
 		if err != nil {
 			log.Panicf("[PREPARE] 获取表元数据 %v 失败... %v", k, err)
 		}
+		fullColl = len(v.CollList) == 0
 		for rows.Next() {
 			var field string
 			var t string
@@ -76,11 +91,20 @@ func (d *DB) FillCollType() {
 			if err != nil {
 				log.Panicf("[PREPARE] 获取表元数据 %v 失败... %v", k, err)
 			}
-			coll, e := v.CollList[field]
-			if e {
-				coll.CollType = GetCollTypeFromMysql(t)
-				if coll.CollType == Unknown {
-					log.Panicf("[PREPARE] %v.%v 类型不支持", k, field)
+			if fullColl {
+				v.CollList[field] = &config.Coll{
+					CollName:    field,
+					CollType:    GetCollTypeFromMysql(t),
+					MappingName: field,
+					FullName:    fmt.Sprintf("%v.%v", v.TableName, field),
+				}
+			} else {
+				coll, e := v.CollList[field]
+				if e {
+					coll.CollType = GetCollTypeFromMysql(t)
+					if coll.CollType == Unknown {
+						log.Panicf("[PREPARE] %v.%v 类型不支持", k, field)
+					}
 				}
 			}
 		}
@@ -139,15 +163,17 @@ func (d *DB) FullGetByRange(startId uint64, endId uint64) []map[*config.Coll]int
 		var params []interface{}
 		for _, coll := range d.colls {
 			switch coll.CollType {
-			case INT, BIGINT, TINYINT:
+			case INT, BIGINT, TINYINT, SmallInt:
 				var arg int64
 				params = append(params, &arg)
 			case VARCHAR, TEXT:
 				var arg string
 				params = append(params, &arg)
-			case UnsignedBigint:
+			case UnsignedBigint, UnsignedSmallInt:
 				var arg uint64
 				params = append(params, &arg)
+			default:
+				fmt.Println(coll)
 			}
 		}
 		err = rows.Scan(params...)
@@ -160,11 +186,11 @@ func (d *DB) FullGetByRange(startId uint64, endId uint64) []map[*config.Coll]int
 		result := make(map[*config.Coll]interface{})
 		for i, v := range params {
 			switch d.colls[i].CollType {
-			case INT, BIGINT, TINYINT:
+			case INT, BIGINT, TINYINT, SmallInt:
 				result[d.colls[i]] = *(v.(*int64))
 			case VARCHAR, TEXT:
 				result[d.colls[i]] = *(v.(*string))
-			case UnsignedBigint:
+			case UnsignedBigint, UnsignedSmallInt:
 				result[d.colls[i]] = *(v.(*uint64))
 			}
 		}
@@ -191,13 +217,13 @@ func (d *DB) FullGetById(ids []interface{}) []map[*config.Coll]interface{} {
 		var params []interface{}
 		for _, coll := range d.colls {
 			switch coll.CollType {
-			case INT, BIGINT, TINYINT:
+			case INT, BIGINT, TINYINT, SmallInt:
 				var arg int64
 				params = append(params, &arg)
 			case VARCHAR, TEXT:
 				var arg string
 				params = append(params, &arg)
-			case UnsignedBigint:
+			case UnsignedBigint, UnsignedSmallInt:
 				var arg uint64
 				params = append(params, &arg)
 			}
@@ -212,11 +238,11 @@ func (d *DB) FullGetById(ids []interface{}) []map[*config.Coll]interface{} {
 		result := make(map[*config.Coll]interface{})
 		for i, v := range params {
 			switch d.colls[i].CollType {
-			case INT, BIGINT, TINYINT:
+			case INT, BIGINT, TINYINT, SmallInt:
 				result[d.colls[i]] = *(v.(*int64))
 			case VARCHAR, TEXT:
 				result[d.colls[i]] = *(v.(*string))
-			case UnsignedBigint:
+			case UnsignedBigint, UnsignedSmallInt:
 				result[d.colls[i]] = *(v.(*uint64))
 			}
 		}
@@ -247,13 +273,13 @@ func (d *DB) GetMainIdsByJoinId(joinId interface{}, joinTableName string) []inte
 		var params []interface{}
 		for _, coll := range colls {
 			switch coll.CollType {
-			case INT, BIGINT, TINYINT:
+			case INT, BIGINT, TINYINT, SmallInt:
 				var arg int64
 				params = append(params, &arg)
 			case VARCHAR, TEXT:
 				var arg string
 				params = append(params, &arg)
-			case UnsignedBigint:
+			case UnsignedBigint, UnsignedSmallInt:
 				var arg uint64
 				params = append(params, &arg)
 			}
@@ -268,11 +294,11 @@ func (d *DB) GetMainIdsByJoinId(joinId interface{}, joinTableName string) []inte
 		result := make(map[string]interface{})
 		for i, v := range params {
 			switch colls[i].CollType {
-			case INT, BIGINT, TINYINT:
+			case INT, BIGINT, TINYINT, SmallInt:
 				result[colls[i].CollName] = *(v.(*int64))
 			case VARCHAR, TEXT:
 				result[colls[i].CollName] = *(v.(*string))
-			case UnsignedBigint:
+			case UnsignedBigint, UnsignedSmallInt:
 				result[colls[i].CollName] = *(v.(*uint64))
 			}
 		}
@@ -313,6 +339,10 @@ func GetCollTypeFromMysql(t string) uint8 {
 		return VARCHAR
 	} else if strings.Contains(t, "text") {
 		return TEXT
+	} else if strings.HasPrefix(t, "smallint(") && strings.HasSuffix(t, "unsigned") {
+		return UnsignedSmallInt
+	} else if strings.HasPrefix(t, "smallint(") {
+		return SmallInt
 	} else {
 		return Unknown
 	}

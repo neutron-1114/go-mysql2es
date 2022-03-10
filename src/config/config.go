@@ -161,7 +161,7 @@ func (c *Conf) initRule(m map[interface{}]interface{}) {
 		tableName := k.(string)
 		tableInfo := v.(map[interface{}]interface{})
 		collList := make(map[string]*Coll)
-		mappings := getOrError(tableInfo, "mapping", fmt.Sprintf("表 [%v] 没有配置列映射", tableName), func(v interface{}) bool { return v != nil }).(map[interface{}]interface{})
+		mappings := getOrDefault(tableInfo, "mapping", make(map[interface{}]interface{}), func(v interface{}) bool { return v != nil }).(map[interface{}]interface{})
 		for k, v := range mappings {
 			collList[k.(string)] = &Coll{k.(string), 0, v.(string), fmt.Sprintf("%v.%v", tableName, k.(string))}
 		}
