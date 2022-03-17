@@ -12,10 +12,17 @@ import (
 )
 
 type Conf struct {
+	Rebuild    *RebuildConf
 	BinLogConf *BinLogConf
 	MySQL      *MySQLConf
 	ES         *ESConf
 	Rule       *Rule
+}
+
+type RebuildConf struct {
+	Active bool
+	Alias  string
+	Cron   string
 }
 
 type BinLogConf struct {
@@ -110,11 +117,21 @@ func Load(confPath *string) *Conf {
 		log.Panic(err)
 	}
 	conf := &Conf{}
+	conf.initRebuildConf(m["rebuild"].(map[interface{}]interface{}))
 	conf.initMySQLConf(m["mysql"].(map[interface{}]interface{}))
 	conf.initRule(m["rule"].(map[interface{}]interface{}))
 	conf.initESConf(m["es"].(map[interface{}]interface{}))
 	conf.initBinLogConf(m["binlog"].(map[interface{}]interface{}))
 	return conf
+}
+
+func (c *Conf) initRebuildConf(m map[interface{}]interface{}) {
+	rebuildConf := &RebuildConf{}
+	rebuildConf.Active = getOrDefault(m, "active", false, NotCheck).(bool)
+	if rebuildConf.Active {
+		rebuildConf.Alias = getOrError(m, "alias", "[rebuild.alias] 不存在，请填写一个别名用来标记索引", func(v interface{}) bool { return v != "" }).(string)
+		rebuildConf.Cron = getOrError(m, "cron", "[rebuild.cron] 不存在，请定义Cron表达式", func(v interface{}) bool { return v != "" }).(string)
+	}
 }
 
 func (c *Conf) initBinLogConf(m map[interface{}]interface{}) {

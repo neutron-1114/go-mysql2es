@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
 	log "github.com/sirupsen/logrus"
 	"go-mysql2es/src/config"
@@ -46,7 +47,30 @@ func main() {
 		}
 	}
 	conf := config.Load(confPath)
-	syncer := core.New(conf)
-	syncer.Prepare()
-	syncer.Run()
+	if conf.Rebuild.Active {
+		syncer := core.New(conf)
+		indexName := fmt.Sprintf("%v_%v", conf.Rebuild.Alias, time.Now().Unix())
+		syncer.EsClient.SetIndex(indexName)
+		syncer.Prepare()
+		syncer.Run()
+		//等待首次同步完成
+		ticker := time.NewTicker(time.Second)
+		for {
+			<-ticker.C
+			if syncer.GetDelay() == 0 {
+				err := syncer.EsClient.Alias(conf.Rebuild.Alias)
+				if err != nil {
+					log.Panicf("[%v] 重命名失败！！！", syncer.EsClient.)
+				}
+				break
+			}
+		}
+		ticker.Stop()
+		nowSyncer := syncer
+
+	} else {
+		syncer := core.New(conf)
+		syncer.Prepare()
+		syncer.Run()
+	}
 }

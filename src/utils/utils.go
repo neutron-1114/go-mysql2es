@@ -58,13 +58,13 @@ func File2list(filepath string, handler func(line string) string) ([]string, err
 	}
 	br := bufio.NewReader(fi)
 	for {
-		a, _, c := br.ReadLine()
-		if c == io.EOF {
-			break
-		}
-		record := string(a)
+		line, err := br.ReadString('\n')
+		record := line
 		record = handler(record)
 		lines = append(lines, record)
+		if err == io.EOF {
+			break
+		}
 	}
 	return lines, nil
 }

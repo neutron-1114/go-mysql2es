@@ -20,10 +20,14 @@ type Syncer struct {
 	Conf        *config.Conf
 	EsClient    *es.Client
 	MysqlClient *db.DB
+	delay       uint32
+	closed      bool
+	block       chan bool
+	canal       *canal.Canal
 }
 
 func New(conf *config.Conf) *Syncer {
-	return &Syncer{conf, es.New(conf), db.New(conf)}
+	return &Syncer{conf, es.New(conf), db.New(conf), 99999, false, make(chan bool), nil}
 }
 
 func (syncer *Syncer) Prepare() {
@@ -34,7 +38,7 @@ func (syncer *Syncer) Prepare() {
 func (syncer *Syncer) Run() {
 	count, err := syncer.EsClient.Count()
 	if err != nil {
-		log.Panicf("获取索引状态失败, %v", err)
+		log.Panicf("[%v] 获取索引状态失败, %v", syncer.Conf.ES.Index, err)
 	}
 	position := &mysql.Position{
 		Name: "",
@@ -51,12 +55,11 @@ func (syncer *Syncer) Run() {
 			position.Name = syncer.Conf.BinLogConf.StartBinLogName
 			position.Pos = uint32(syncer.Conf.BinLogConf.StartBinLogPosition)
 		}
-
 	} else {
 		if utils.IsFile(statusFilePath) {
 			lines, err := utils.File2list(statusFilePath, utils.CommonHandler)
 			if err != nil {
-				log.Panicf("读取状态文件错误, %v", err)
+				log.Panicf("[%v] 读取状态文件错误, %v", syncer.Conf.ES.Index, err)
 			}
 			info := strings.Split(lines[0], "\t")
 			position.Name = info[0]
@@ -75,7 +78,11 @@ func (syncer *Syncer) Run() {
 }
 
 func (syncer *Syncer) incr(position *mysql.Position, statusFilePath string) {
-	log.Infof("[INCR] 准备开始同步..., %v %v", position.Name, position.Pos)
+	if syncer.closed {
+		log.Infof("[%v] closed... 增量同步被取消, %v %v", syncer.Conf.ES.Index, position.Name, position.Pos)
+		return
+	}
+	log.Infof("[%v] 准备开始同步..., %v %v", syncer.Conf.ES.Index, position.Name, position.Pos)
 	cfg := canal.NewDefaultConfig()
 	cfg.Addr = fmt.Sprintf("%v:%v", syncer.Conf.MySQL.Host, syncer.Conf.MySQL.Port)
 	cfg.User = syncer.Conf.MySQL.User
@@ -95,28 +102,33 @@ func (syncer *Syncer) incr(position *mysql.Position, statusFilePath string) {
 	cfg.IncludeTableRegex = syncTables
 	c, err := canal.NewCanal(cfg)
 	if err != nil {
-		log.Panicf("[INCR] 建立 canal 失败, %v", err)
+		log.Panicf("[%v] 建立 canal 失败, %v", syncer.Conf.ES.Index, err)
 	}
+	syncer.canal = c
 	h := handler.New(syncer.Conf.Rule, syncer.EsClient, syncer.MysqlClient)
 	c.SetEventHandler(h)
 	go func() {
 		err = c.RunFrom(*position)
 		if err != nil {
-			log.Panicf("[INCR] 启动 canal 失败, %v", err)
+			log.Panicf("[%v] 启动 canal 失败, %v", syncer.Conf.ES.Index, err)
 		}
 	}()
 	go func() {
 		ticker := time.NewTicker(time.Second) // 每隔1s进行一次打印
-		for {
+		for !syncer.closed {
 			<-ticker.C
 			p := c.SyncedPosition()
 			mp, _ := c.GetMasterPos()
-			log.Infof("[INCR] P: %v -> %v MP: %v -> %v delay: %v ...", p.Name, p.Pos, mp.Name, mp.Pos, c.GetDelay())
+			delay := c.GetDelay()
+			log.Infof("[%v] P: %v -> %v MP: %v -> %v delay: %v ...", syncer.Conf.ES.Index, p.Name, p.Pos, mp.Name, mp.Pos, delay)
+			syncer.delay = delay
 		}
+		log.Infof("[%v] delay print closed ...", syncer.Conf.ES.Index)
+		ticker.Stop()
 	}()
 	go func() {
 		ticker := time.NewTicker(time.Second) // 每隔1s将当前状态写入到状态文件
-		for {
+		for !syncer.closed {
 			<-ticker.C
 			f, err := os.OpenFile(statusFilePath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 			if err != nil {
@@ -129,8 +141,10 @@ func (syncer *Syncer) incr(position *mysql.Position, statusFilePath string) {
 				_ = f.Close()
 			}
 		}
+		log.Infof("[%v] writing binlog status file closed ...", syncer.Conf.ES.Index)
+		ticker.Stop()
 	}()
-	<-make(chan bool)
+	<-syncer.block
 }
 
 func (syncer *Syncer) full() {
@@ -138,7 +152,7 @@ func (syncer *Syncer) full() {
 	var count = 0
 	var startTime = time.Now().Unix()
 	start := minId
-	for start <= maxId {
+	for start <= maxId && !syncer.closed {
 		resultList := syncer.MysqlClient.FullGetByRange(start, start+1000)
 		start += 1000
 		err := syncer.EsClient.BatchInsert(resultList)
@@ -147,7 +161,23 @@ func (syncer *Syncer) full() {
 		}
 		count += len(resultList)
 		cost := time.Now().Unix() - startTime
-		log.Infof("[FULL] execute: %v cost: %v avg: %v", count, cost, float64(cost)/float64(count))
+		log.Infof("[%v] execute: %v cost: %v avg: %v", syncer.Conf.ES.Index, count, cost, float64(cost)/float64(count))
 	}
-	log.Infof("[FULL] finished!!! cost: %v", time.Now().Unix()-startTime)
+	if syncer.closed {
+		log.Infof("[%v] closed... cost: %v", syncer.Conf.ES.Index, time.Now().Unix()-startTime)
+	} else {
+		log.Infof("[%v] finished!!! cost: %v", syncer.Conf.ES.Index, time.Now().Unix()-startTime)
+	}
+}
+
+func (syncer *Syncer) close() {
+	syncer.closed = true
+	syncer.canal.Close()
+	//休眠30秒
+	time.Sleep(30 * time.Second)
+	syncer.block <- true
+}
+
+func (syncer *Syncer) GetDelay() uint32 {
+	return syncer.delay
 }
