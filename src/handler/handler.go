@@ -36,7 +36,7 @@ func (h *EsSyncHandler) rowsEventHandler(e *canal.RowsEvent) (affected int64, er
 
 func (h *EsSyncHandler) insertEventHandler(e *canal.RowsEvent) (affected int64, err error) {
 	//主表插入：请求MYSQL查询所有结果 -> ES.UPSERT
-	//副表插入：忽略，理论上不可能出现主表有关联到刚刚生成的副表数据
+	//副表插入：拿到所有符合的数据重新查询
 	if e.Table.Name == h.rule.MainTable.TableName {
 		mainIndex := -1
 		for i, coll := range e.Table.Columns {
@@ -54,6 +54,30 @@ func (h *EsSyncHandler) insertEventHandler(e *canal.RowsEvent) (affected int64, 
 			err := h.EsClient.BatchInsert(resultList)
 			if err != nil {
 				log.Error(err)
+			}
+			affected++
+		}
+	} else {
+		mainIndex := -1
+		joinTable := h.rule.JoinTables[e.Table.Name]
+		for i, coll := range e.Table.Columns {
+			if coll.Name == joinTable.JoinCollName {
+				mainIndex = i
+				break
+			}
+		}
+		if mainIndex == -1 {
+			return 0, err
+		}
+		for _, row := range e.Rows {
+			id := row[mainIndex]
+			mainIds := h.MysqlClient.GetMainIdsByJoinId(id, joinTable.TableName)
+			resultList := h.MysqlClient.FullGetById(mainIds)
+			for _, result := range resultList {
+				err := h.EsClient.Upsert(result)
+				if err != nil {
+					log.Error(err)
+				}
 			}
 			affected++
 		}
