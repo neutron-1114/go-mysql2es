@@ -115,6 +115,18 @@ func (syncer *Syncer) incr(position *mysql.Position, statusFilePath string) {
 		}
 	}()
 	go func() {
+		ticker := time.NewTicker(time.Second * 60) // 每隔1s进行一次打印
+		for {
+			<-ticker.C
+			stat := h.RefreshAndGetStat()
+			var lines []string
+			for tableName, st := range stat {
+				lines = append(lines, fmt.Sprintf("[%v -> (i:%v,u:%v,d:%v)]", tableName, st["i"], st["u"], st["d"]))
+			}
+			log.Infof("[INCR] stat: %v", strings.Join(lines, " "))
+		}
+	}()
+	go func() {
 		ticker := time.NewTicker(time.Second) // 每隔1s将当前状态写入到状态文件
 		for {
 			<-ticker.C
