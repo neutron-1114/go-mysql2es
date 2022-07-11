@@ -220,7 +220,8 @@ func (d *DB) GetMainIdsByJoinId(joinId interface{}, joinTableName string) []inte
 	log.Info(execSQL)
 	rows, err := d.db.Query(execSQL)
 	if err != nil {
-		log.Panicf("%v 执行失败... %v", execSQL, err)
+		log.Errorf("%v 执行失败... %v", execSQL, err)
+		return []interface{}{}
 	}
 	colls := []*config.Coll{d.rule.MainTable.CollList[mainFieldName]}
 	var resultList []interface{}

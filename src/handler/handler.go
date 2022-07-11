@@ -107,14 +107,16 @@ func (h *EsSyncHandler) insertEventHandler(e *canal.RowsEvent) (affected int64, 
 		}
 		for id := range ids {
 			mainIds := h.MysqlClient.GetMainIdsByJoinId(id, joinTable.TableName)
-			resultList := h.MysqlClient.FullGetById(mainIds)
-			for _, result := range resultList {
-				err := h.EsClient.Upsert(result)
-				if err != nil {
-					log.Error(err)
+			if mainIds != nil && len(mainIds) != 0 {
+				resultList := h.MysqlClient.FullGetById(mainIds)
+				for _, result := range resultList {
+					err := h.EsClient.Upsert(result)
+					if err != nil {
+						log.Error(err)
+					}
 				}
+				affected++
 			}
-			affected++
 		}
 	}
 	return affected, err
@@ -166,14 +168,16 @@ func (h *EsSyncHandler) deleteEventHandler(e *canal.RowsEvent) (affected int64, 
 		}
 		for id := range ids {
 			mainIds := h.MysqlClient.GetMainIdsByJoinId(id, joinTable.TableName)
-			resultList := h.MysqlClient.FullGetById(mainIds)
-			for _, result := range resultList {
-				err := h.EsClient.Upsert(result)
-				if err != nil {
-					log.Error(err)
+			if mainIds != nil && len(mainIds) != 0 {
+				resultList := h.MysqlClient.FullGetById(mainIds)
+				for _, result := range resultList {
+					err := h.EsClient.Upsert(result)
+					if err != nil {
+						log.Error(err)
+					}
 				}
+				affected++
 			}
-			affected++
 		}
 	}
 	return affected, err
@@ -228,14 +232,16 @@ func (h *EsSyncHandler) updateEventHandler(e *canal.RowsEvent) (affected int64, 
 		}
 		for id := range ids {
 			mainIds := h.MysqlClient.GetMainIdsByJoinId(id, joinTable.TableName)
-			resultList := h.MysqlClient.FullGetById(mainIds)
-			for _, result := range resultList {
-				err := h.EsClient.Upsert(result)
-				if err != nil {
-					log.Error(err)
+			if mainIds != nil && len(mainIds) != 0 {
+				resultList := h.MysqlClient.FullGetById(mainIds)
+				for _, result := range resultList {
+					err := h.EsClient.Upsert(result)
+					if err != nil {
+						log.Error(err)
+					}
 				}
+				affected++
 			}
-			affected++
 		}
 	}
 	return affected, err
